@@ -1,3 +1,5 @@
-libspooky.a
 sbench
+scorrect
+
 *.o
+*.a

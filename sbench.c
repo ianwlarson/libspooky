@@ -2,22 +2,13 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <inttypes.h>
 #include <unistd.h>
 #include <time.h>
 #include <string.h>
 #include <sys/mman.h>
 
 #include "spooky.h"
-
-static inline void
-printhash(unsigned char *d)
-{
-    printf("    { ");
-    for (int j = 0; j < 16; ++j) {
-        printf("0x%02x, ", d[j]);
-    }
-    printf("},\n");
-}
 
 static inline uint32_t
 xorshift32(uint32_t *const p_rng)
@@ -86,7 +77,7 @@ main(int argc, char **argv)
     }
 
     uint64_t const total_data = (MAPSIZE - offset) * NLOOPS;
-    printf("Total time %llu ns\n", difference);
+    printf("Total time %"PRIu64" ns\n", difference);
     printf("Total bytes %" PRIu64 "\n", total_data);
     printf("Bytes per usec %f\n", 1.0*total_data / (difference / 1000.0));
     printf("Carry forward was %0x\n", carry_forward);

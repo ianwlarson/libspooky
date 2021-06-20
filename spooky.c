@@ -216,8 +216,7 @@ void
 spooky_hash128(void const*const message, size_t const length,
     uint64_t *const hash1, uint64_t *const hash2)
 {
-    if (length < SC_BUFSIZE)
-    {
+    if (length < SC_BUFSIZE) {
         spooky_short(message, length, hash1, hash2);
         return;
     }
