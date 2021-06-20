@@ -4,6 +4,7 @@
 // Originally create by Bob Jenkins. Ported to C by Ian Larson
 
 #include <stddef.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <inttypes.h>
 
@@ -31,6 +32,7 @@ spooky_hash32(void const*p_msg, size_t const p_len, uint32_t const p_seed)
 struct spooky_context {
     size_t m_length;    // Amount of bytes that have been mixed
     size_t m_partial;   // Amount of unhashed data that is stored
+    bool overflowed;
     uint64_t s0;
     uint64_t s1;
     uint64_t s2;

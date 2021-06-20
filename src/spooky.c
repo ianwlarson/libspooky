@@ -6,12 +6,6 @@
 #include <stdbool.h>
 #include "spooky.h"
 
-static inline size_t
-amount_updated(spooky_context_t const*const sc)
-{
-    return (sc->m_partial + sc->m_length);
-}
-
 __attribute__((pure, always_inline))
 static inline uint64_t
 rd64(uint8_t const*const ptr)
@@ -351,10 +345,18 @@ spooky_init(spooky_context_t *const context, uint64_t const seed0, uint64_t cons
 void
 spooky_update(spooky_context_t *const sc, void const*msg, size_t msglen)
 {
-    if ((amount_updated(sc) + msglen) < SC_BUFSIZE) {
-        __builtin_memcpy((unsigned char *)sc->m_unhashed + sc->m_partial, msg, msglen);
-        sc->m_partial += msglen;
-        return;
+    size_t current_datalen;
+    bool const overflow1 = __builtin_add_overflow(sc->m_length, sc->m_partial, &current_datalen);
+    if (!overflow1 && (current_datalen < SC_BUFSIZE)) {
+        // The first addition didn't overflow, and we have less than SC_BUFSIZE bytes.
+        // Check to see if the second addition overflows
+        size_t next_datalen;
+        bool const overflow2 = __builtin_add_overflow(current_datalen, msglen, &next_datalen);
+        if (!overflow2 && (next_datalen < SC_BUFSIZE)) {
+            __builtin_memcpy((unsigned char *)sc->m_unhashed + sc->m_partial, msg, msglen);
+            sc->m_partial += msglen;
+            return;
+        }
     }
 
     // We've gone beyond a small buffer, we can operate on blocks now
@@ -394,6 +396,9 @@ spooky_update(spooky_context_t *const sc, void const*msg, size_t msglen)
 
         sc->m_partial -= SC_BLOCKSIZE;
         sc->m_length += SC_BLOCKSIZE;
+        if (sc->m_length < SC_BLOCKSIZE) {
+            sc->overflowed = true;
+        }
 
         __builtin_memcpy(sc->m_unhashed, (unsigned char *)sc->m_unhashed + SC_BLOCKSIZE, sc->m_partial);
 
@@ -443,6 +448,9 @@ spooky_update(spooky_context_t *const sc, void const*msg, size_t msglen)
 
             sc->m_partial = 0;
             sc->m_length += SC_BLOCKSIZE;
+            if (sc->m_length < SC_BLOCKSIZE) {
+                sc->overflowed = true;
+            }
 
             msglen -= fillamt;
             lmsg += fillamt;
@@ -454,6 +462,9 @@ spooky_update(spooky_context_t *const sc, void const*msg, size_t msglen)
     size_t const leftover = msglen - nbytes_processed;
 
     sc->m_length += nbytes_processed;
+    if (sc->m_length < nbytes_processed) {
+        sc->overflowed = true;
+    }
 
     // Handle blocks
     if (((uintptr_t)lmsg & 0x7) == 0) {
@@ -520,7 +531,9 @@ spooky_update(spooky_context_t *const sc, void const*msg, size_t msglen)
 void
 spooky_final(spooky_context_t const*const sc, uint64_t *hash0, uint64_t *hash1)
 {
-    if (amount_updated(sc) < SC_BUFSIZE) {
+    size_t current_datalen;
+    bool const overflow = __builtin_add_overflow(sc->m_length, sc->m_partial, &current_datalen);
+    if (!sc->overflowed && (!overflow) && (current_datalen < SC_BUFSIZE)) {
 
         *hash0 = sc->s0;
         *hash1 = sc->s1;
