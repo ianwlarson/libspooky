@@ -30,9 +30,8 @@ spooky_hash32(void const*p_msg, size_t const p_len, uint32_t const p_seed)
 }
 
 struct spooky_context {
-    size_t m_length;    // Amount of bytes that have been mixed
-    size_t m_partial;   // Amount of unhashed data that is stored
-    bool overflowed;
+    int m_partial;
+    bool m_use_short;
     uint64_t s0;
     uint64_t s1;
     uint64_t s2;

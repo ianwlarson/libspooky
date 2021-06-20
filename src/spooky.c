@@ -323,40 +323,43 @@ spooky_hash128(void const*const message, size_t const length,
 
 // init spooky state
 void
-spooky_init(spooky_context_t *const context, uint64_t const seed0, uint64_t const seed1)
+spooky_init(spooky_context_t *const sc, uint64_t const seed0, uint64_t const seed1)
 {
-    context->m_length = 0;
-    context->m_partial = 0;
+    sc->m_partial = 0;
+    sc->m_use_short = true;
 
-    context->s0 = seed0;
-    context->s1 = seed1;
-    context->s2 = SC_CONST;
-    context->s3 = seed0;
-    context->s4 = seed1;
-    context->s5 = SC_CONST;
-    context->s6 = seed0;
-    context->s7 = seed1;
-    context->s8 = SC_CONST;
-    context->s9 = seed0;
-    context->s10 = seed1;
-    context->s11 = SC_CONST;
+    sc->s0 = seed0;
+    sc->s1 = seed1;
+    sc->s2 = SC_CONST;
+    sc->s3 = seed0;
+    sc->s4 = seed1;
+    sc->s5 = SC_CONST;
+    sc->s6 = seed0;
+    sc->s7 = seed1;
+    sc->s8 = SC_CONST;
+    sc->s9 = seed0;
+    sc->s10 = seed1;
+    sc->s11 = SC_CONST;
 }
 
 void
 spooky_update(spooky_context_t *const sc, void const*msg, size_t msglen)
 {
-    size_t current_datalen;
-    bool const overflow1 = __builtin_add_overflow(sc->m_length, sc->m_partial, &current_datalen);
-    if (!overflow1 && (current_datalen < SC_BUFSIZE)) {
-        // The first addition didn't overflow, and we have less than SC_BUFSIZE bytes.
-        // Check to see if the second addition overflows
-        size_t next_datalen;
-        bool const overflow2 = __builtin_add_overflow(current_datalen, msglen, &next_datalen);
-        if (!overflow2 && (next_datalen < SC_BUFSIZE)) {
-            __builtin_memcpy((unsigned char *)sc->m_unhashed + sc->m_partial, msg, msglen);
-            sc->m_partial += msglen;
-            return;
+    if (sc->m_use_short) {
+        size_t new_partial;
+        if (__builtin_add_overflow(sc->m_partial, msglen, &new_partial)) {
+            // The new msglen overflows a size_t, which is fine.
+        } else {
+            if (new_partial < SC_BUFSIZE) {
+                // The new data isn't enough to switch from using the short
+                // hash to the long hash
+                __builtin_memcpy((unsigned char *)sc->m_unhashed + sc->m_partial, msg, msglen);
+                sc->m_partial += msglen;
+                return;
+            }
         }
+
+        sc->m_use_short = false;
     }
 
     // We've gone beyond a small buffer, we can operate on blocks now
@@ -395,10 +398,6 @@ spooky_update(spooky_context_t *const sc, void const*msg, size_t msglen)
         h11 += datap[11];  h1  ^= h9;  h10 ^= h11;  h11 = rol64(h11,46);   h10 += h0;
 
         sc->m_partial -= SC_BLOCKSIZE;
-        sc->m_length += SC_BLOCKSIZE;
-        if (sc->m_length < SC_BLOCKSIZE) {
-            sc->overflowed = true;
-        }
 
         __builtin_memcpy(sc->m_unhashed, (unsigned char *)sc->m_unhashed + SC_BLOCKSIZE, sc->m_partial);
 
@@ -447,10 +446,6 @@ spooky_update(spooky_context_t *const sc, void const*msg, size_t msglen)
             h11 += datap[11];  h1  ^= h9;  h10 ^= h11;  h11 = rol64(h11,46);   h10 += h0;
 
             sc->m_partial = 0;
-            sc->m_length += SC_BLOCKSIZE;
-            if (sc->m_length < SC_BLOCKSIZE) {
-                sc->overflowed = true;
-            }
 
             msglen -= fillamt;
             lmsg += fillamt;
@@ -458,13 +453,7 @@ spooky_update(spooky_context_t *const sc, void const*msg, size_t msglen)
     }
 
     size_t const num_blocks = msglen / SC_BLOCKSIZE;
-    size_t const nbytes_processed = num_blocks * SC_BLOCKSIZE;
-    size_t const leftover = msglen - nbytes_processed;
-
-    sc->m_length += nbytes_processed;
-    if (sc->m_length < nbytes_processed) {
-        sc->overflowed = true;
-    }
+    size_t const leftover = msglen % SC_BLOCKSIZE;
 
     // Handle blocks
     if (((uintptr_t)lmsg & 0x7) == 0) {
@@ -509,7 +498,7 @@ spooky_update(spooky_context_t *const sc, void const*msg, size_t msglen)
 
     // Stash any remainder to be hashed later
     if (leftover != 0) {
-        __builtin_memcpy(sc->m_unhashed, lmsg + nbytes_processed, leftover);
+        __builtin_memcpy(sc->m_unhashed, lmsg + (num_blocks * SC_BLOCKSIZE), leftover);
         sc->m_partial = leftover;
     }
 
@@ -531,10 +520,7 @@ spooky_update(spooky_context_t *const sc, void const*msg, size_t msglen)
 void
 spooky_final(spooky_context_t const*const sc, uint64_t *hash0, uint64_t *hash1)
 {
-    size_t current_datalen;
-    bool const overflow = __builtin_add_overflow(sc->m_length, sc->m_partial, &current_datalen);
-    if (!sc->overflowed && (!overflow) && (current_datalen < SC_BUFSIZE)) {
-
+    if (sc->m_use_short) {
         *hash0 = sc->s0;
         *hash1 = sc->s1;
         spooky_short(sc->m_unhashed, sc->m_partial, hash0, hash1);
