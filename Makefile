@@ -1,11 +1,23 @@
 
-.PHONY: all clean print
+CC=gcc
+CFLAGS=-Ofast -Wall -std=gnu11
 
-all:
-	@python3 buildo.py -m
+.PHONY: all clean sbench
+
+all: libspooky.a sbench
+
+spooky.o: spooky.c | spooky.h
+	$(CC) $(CFLAGS) $^ -c -I. -o $@
+
+libspooky.a: spooky.o
+	ar rcs $@ $^
+
+sbench.o: sbench.c | spooky.h
+	$(CC) $(CFLAGS) $^ -c -I. -o $@
+
+sbench: sbench.o | libspooky.a
+	$(CC) $(CFLAGS) $^ -L. -lspooky -o $@
 
 clean:
-	@python3 buildo.py -t clean
+	rm -f libspooky.a spooky.o sbench
 
-print:
-	@python3 buildo.py -m -t print
